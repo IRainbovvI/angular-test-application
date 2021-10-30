@@ -6,6 +6,9 @@ import {
   Observable,
   from,
   combineLatest,
+  of,
+  BehaviorSubject,
+  timer,
 } from 'rxjs';
 import {
   scan,
@@ -17,6 +20,10 @@ import {
   switchMapTo,
   repeat,
   shareReplay,
+  filter,
+  map,
+  take,
+  bufferTime,
 } from 'rxjs/operators';
 
 @Component({
@@ -43,26 +50,55 @@ export class MainComponent implements OnInit {
     const start$ = fromEvent(this.start.nativeElement, 'click');
     const stop$ = fromEvent(this.stop.nativeElement, 'click');
     const reset$ = fromEvent(this.reset.nativeElement, 'click');
+    const pause$ = fromEvent(this.wait.nativeElement, 'click');
 
     const interval$: any = interval(10);
     const init = 0;
+    const isActive$ = new BehaviorSubject(true);
 
-    start$
+    const mainObs$ = start$.pipe(
+      switchMapTo(interval$),
+      startWith(init),
+      scan((val) => (isActive$.getValue() === true ? (this.time += 1) : null)),
+      takeUntil(stop$),
+      repeat()
+    );
+
+    start$.pipe(mapTo(isActive$)).subscribe(() => isActive$.next(true));
+    pause$
       .pipe(
-        switchMapTo(interval$),
-        startWith(init),
-        scan((val: any) => val + 1),
-        takeUntil(stop$ || reset$),
-        repeat()
+        bufferTime(500),
+        filter((val) => val.length > 1),
+        mapTo(isActive$)
+      )
+      .subscribe(() => isActive$.next(false));
+    stop$.subscribe(
+      () => (
+        (this.time = 0),
+        (this.timeMS.timeMM = String(this.time % 100).padStart(2, '0')),
+        (this.timeMS.timeSS = String(Math.floor(this.time / 100)).padStart(
+          2,
+          '0'
+        ))
+      )
+    );
+
+    combineLatest(mainObs$, isActive$)
+      .pipe(
+        filter((val: any) => val[1]),
+        map((val: any) => val[0])
       )
       .subscribe(
         (val) => (
-          (this.timeMS.timeMM = String(val % 100).padStart(2, '0')),
-          (this.timeMS.timeSS = String(Math.floor(val / 100)).padStart(2, '0'))
-        ),
-        (err) => console.log(err),
-        () => (this.time = 0)
+          (this.timeMS.timeMM = String(this.time % 100).padStart(2, '0')),
+          (this.timeMS.timeSS = String(Math.floor(this.time / 100)).padStart(
+            2,
+            '0'
+          ))
+        )
       );
+
+    reset$.subscribe(() => (this.time = 0));
   }
 
   ngOnInit(): void {}
